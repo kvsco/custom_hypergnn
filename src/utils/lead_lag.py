@@ -7,7 +7,7 @@ insights and applications" (Cucuringu et al. 2019) clustering algo
 
 import itertools
 import dcor
-import iisignature
+# import iisignature
 import numpy as np
 import pandas as pd
 from sklearn import cluster
@@ -101,11 +101,11 @@ def compute_lead_lag(data_subset, method, **kwargs):
         # alternative normalisation:
         # lead_lag_measure = (A - B)/(A + B)
 
-    elif method == "signature":
-        path = data_subset.cumsum()
-        path /= path.std()
-        signature = iisignature.sig(path, 2, 1)
-        lead_lag_measure = signature[1][1] - signature[1][2]
+    # elif method == "signature":
+    #     path = data_subset.cumsum()
+    #     path /= path.std()
+    #     signature = iisignature.sig(path, 2, 1)
+    #     lead_lag_measure = signature[1][1] - signature[1][2]
 
     elif method == "ccf_at_max_lag":
         lags = np.arange(1, kwargs["max_lag"] + 1)

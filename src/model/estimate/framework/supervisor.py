@@ -46,7 +46,9 @@ class Supervisor():
         self._n_step_ahead = config["data"]["n_step_ahead"]
         self._his_window = config["data"]["history_window"]
         self._data_loader = DataLoader(self._config)
-        self._X_train, self._y_train, self._X_test, self._y_test, self._hypergraphsnapshot, self._incidence_edges, self._buy_prob_threshold, self._sell_prob_threshold = self._data_loader.get_data(self._start_train, self._end_train, self._start_test, self._end_test)
+        self._X_train, self._y_train, self._X_test, self._y_test, \
+        self._hypergraphsnapshot, self._incidence_edges, self._buy_prob_threshold, self._sell_prob_threshold \
+            = self._data_loader.get_data(self._start_train, self._end_train, self._start_test, self._end_test)
         # Initialize model
         num_stocks = len(self._symbols)
         self._model = Model(snapshots=self._hypergraphsnapshot, num_stock=num_stocks, history_window=self._his_window, num_feature=self._X_train.shape[3], embedding_dim = self._hidden_dim, rnn_hidden_unit = self._rnn_units, drop_prob = self._dropout)

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData" autoUpload="Always" serverName="dyd9800@222.111.89.209:22001 password" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false">
+    <option name="confirmBeforeUploading" value="false" />
+    <serverData>
+      <paths name="dyd9800@222.111.89.209:22001 password">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/home/dyd9800/github/estimate/src" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="kvsco_ai_server">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/estimate" local="$PROJECT_DIR$/.." web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+    </serverData>
+    <option name="myAutoUpload" value="ALWAYS" />
+  </component>
+</project>
