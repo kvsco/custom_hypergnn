@@ -3,7 +3,7 @@
   <component name="WebServers">
     <option name="servers">
       <webServer id="ab61af7a-0094-41d6-a4cd-1f2d28f6b592" name="kvsco_ai_server">
-        <fileTransfer rootFolder="/home/dyd9800/github" accessType="SFTP" host="222.111.89.209" port="22001" sshConfigId="2f872c1d-3a20-42d3-b10f-700e82d3585f" sshConfig="dyd9800@222.111.89.209:22001 password">
+        <fileTransfer rootFolder="/home/dyd9800/github" accessType="SFTP" host="59.5.160.78" port="22001" sshConfigId="2f872c1d-3a20-42d3-b10f-700e82d3585f" sshConfig="dyd9800@59.5.160.78:22001 password">
           <advancedOptions>
             <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
           </advancedOptions>

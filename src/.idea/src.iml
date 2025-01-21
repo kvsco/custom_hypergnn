@@ -2,7 +2,7 @@
 <module type="PYTHON_MODULE" version="4">
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$" />
-    <orderEntry type="jdk" jdkName="estimate" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="Remote Python 3.8.19 (sftp://dyd9800@59.5.160.78:22001/home/dyd9800/anaconda3/envs/estimate/bin/python3)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
   <component name="PyDocumentationSettings">

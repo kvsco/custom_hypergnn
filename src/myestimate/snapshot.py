@@ -4,11 +4,12 @@ import pandas as pd
 from utils.lead_lag import get_lead_lag_cluster
 import os
 
+
 class HypergraphSnapshots:
-    def __init__(self, symbols, start_train_date, train_data_storage, use_cuda):
+    def __init__(self, symbols, data_dict, train_data_storage, use_cuda):
         self.hypergraph_snapshot = []
         self._use_cuda = use_cuda
-        self._start_train_date = start_train_date
+        self.data_dict = data_dict
         self._train_data_storage = train_data_storage
         self._symbols = symbols
         self.s = 1.0
@@ -19,25 +20,25 @@ class HypergraphSnapshots:
         sector_hypergraph = self._hypergraph_cora(sector_incidence_matrix)
         self.hypergraph_snapshot.append(sector_hypergraph)
 
-        ## 2) lead lag 거리기반
-        lead_lag_distance_incidence_matrix = self._lead_lag_distance_incidence_matrix()
-        lead_lag_distance_hypergraph = self._hypergraph_cora(lead_lag_distance_incidence_matrix)
-        self.hypergraph_snapshot.append(lead_lag_distance_hypergraph)
-
-        ## 3) lead lag 피어슨 상관계수 기반
-        lead_lag_pearson_incidence_matrix = self._lead_lag_pearson_incidence_matrix()
-        lead_lag_pearson_hypergraph = self._hypergraph_cora(lead_lag_pearson_incidence_matrix)
-        self.hypergraph_snapshot.append(lead_lag_pearson_hypergraph)
-
-        ## 4) lead lag 켄달 상관계수 기반
-        lead_lag_kendall_incidence_matrix = self._lead_lag_kendall_incidence_matrix()
-        lead_lag_kendall_hypergraph = self._hypergraph_cora(lead_lag_kendall_incidence_matrix)
-        self.hypergraph_snapshot.append(lead_lag_kendall_hypergraph)
-
-        ## 5) lead lag 상호정보량 기반
-        lead_lag_mutual_information_incidence_matrix = self._lead_lag_mutual_information_incidence_matrix()
-        lead_lag_mutual_information_hypergraph = self._hypergraph_cora(lead_lag_mutual_information_incidence_matrix)
-        self.hypergraph_snapshot.append(lead_lag_mutual_information_hypergraph)
+        # ## 2) lead lag 거리기반
+        # lead_lag_distance_incidence_matrix = self._lead_lag_distance_incidence_matrix()
+        # lead_lag_distance_hypergraph = self._hypergraph_cora(lead_lag_distance_incidence_matrix)
+        # self.hypergraph_snapshot.append(lead_lag_distance_hypergraph)
+        #
+        # ## 3) lead lag 피어슨 상관계수 기반
+        # lead_lag_pearson_incidence_matrix = self._lead_lag_pearson_incidence_matrix()
+        # lead_lag_pearson_hypergraph = self._hypergraph_cora(lead_lag_pearson_incidence_matrix)
+        # self.hypergraph_snapshot.append(lead_lag_pearson_hypergraph)
+        #
+        # ## 4) lead lag 켄달 상관계수 기반
+        # lead_lag_kendall_incidence_matrix = self._lead_lag_kendall_incidence_matrix()
+        # lead_lag_kendall_hypergraph = self._hypergraph_cora(lead_lag_kendall_incidence_matrix)
+        # self.hypergraph_snapshot.append(lead_lag_kendall_hypergraph)
+        #
+        # ## 5) lead lag 상호정보량 기반
+        # lead_lag_mutual_information_incidence_matrix = self._lead_lag_mutual_information_incidence_matrix()
+        # lead_lag_mutual_information_hypergraph = self._hypergraph_cora(lead_lag_mutual_information_incidence_matrix)
+        # self.hypergraph_snapshot.append(lead_lag_mutual_information_hypergraph)
 
     def _convert_incidence_to_adjacency_torch(self, incidence_matrix):
         num_nodes = incidence_matrix.shape[0]
@@ -51,21 +52,33 @@ class HypergraphSnapshots:
         return torch.Tensor(adj_matrix)
 
     def _sector_incidence_matrix(self):
-        stock_list = pd.read_csv("data/US/sp500/sp500_ticker.csv", index_col = "Symbol")
-        cat_list = stock_list.loc[self._symbols]["Sector"].unique()
-        cat_dict = {}
-        for i in range(len(cat_list)):
-            cat = cat_list[i]
-            cat_dict[cat] = i
-            
+
+        cat_list = ['group1', 'group2', 'group3', 'group4', 'group5', 'group6']
+        cat_dict = {
+            'group1': 0,
+            'group2': 1,
+            'group3': 2,
+            'group4': 3,
+            'group5': 4,
+            'group6': 5,
+        }
+        df_list = []
+
+        for group_name, target_list in self.data_dict.items():
+            for target in target_list:
+                df_list.append({'target_id': target, 'group': group_name})
+
+        cat_df = pd.DataFrame(df_list)
+        cat_df = cat_df.set_index('target_id')
         incidence_matrix = np.zeros((len(self._symbols), len(cat_list)))
+
         for i in range(len(self._symbols)):
-            cat_key = stock_list.loc[self._symbols[i]].Sector    
+            cat_key = cat_df.loc[self._symbols[i]].group
             cat_index = cat_dict[cat_key]
             incidence_matrix[i][cat_index] = 1
-        
+
         return incidence_matrix
-    
+
     def _lead_lag_distance_incidence_matrix(self):
         lead_lag_path = "data/US/sp500/lead_lag_edges_distance/sp500_leadlag_{}.csv".format(self._start_train_date)
         if os.path.isfile(lead_lag_path):
@@ -78,11 +91,12 @@ class HypergraphSnapshots:
         for i in range(len(self._symbols)):
             cluster_index = lead_lag[self._symbols[i]]
             incidence_matrix[i][cluster_index] = 1
-        
+
         return incidence_matrix
-    
+
     def _lead_lag_kendall_incidence_matrix(self):
-        lead_lag_path = "data/US/sp500/lead_lag_edges_kendall/sp500_leadlag_kendall_{}.csv".format(self._start_train_date)
+        lead_lag_path = "data/US/sp500/lead_lag_edges_kendall/sp500_leadlag_kendall_{}.csv".format(
+            self._start_train_date)
         if os.path.isfile(lead_lag_path):
             lead_lag = pd.read_csv(lead_lag_path, index_col=0).squeeze("columns")
         else:
@@ -93,11 +107,12 @@ class HypergraphSnapshots:
         for i in range(len(self._symbols)):
             cluster_index = lead_lag[self._symbols[i]]
             incidence_matrix[i][cluster_index] = 1
-        
+
         return incidence_matrix
 
     def _lead_lag_mutual_information_incidence_matrix(self):
-        lead_lag_path = "data/US/sp500/lead_lag_edges_mutual_information/sp500_leadlag_mutual_information_{}.csv".format(self._start_train_date)
+        lead_lag_path = "data/US/sp500/lead_lag_edges_mutual_information/sp500_leadlag_mutual_information_{}.csv".format(
+            self._start_train_date)
         if os.path.isfile(lead_lag_path):
             lead_lag = pd.read_csv(lead_lag_path, index_col=0).squeeze("columns")
         else:
@@ -108,11 +123,12 @@ class HypergraphSnapshots:
         for i in range(len(self._symbols)):
             cluster_index = lead_lag[self._symbols[i]]
             incidence_matrix[i][cluster_index] = 1
-        
+
         return incidence_matrix
 
     def _lead_lag_pearson_incidence_matrix(self):
-        lead_lag_path = "data/US/sp500/lead_lag_edges_pearson/sp500_leadlag_pearson_{}.csv".format(self._start_train_date)
+        lead_lag_path = "data/US/sp500/lead_lag_edges_pearson/sp500_leadlag_pearson_{}.csv".format(
+            self._start_train_date)
         if os.path.isfile(lead_lag_path):
             lead_lag = pd.read_csv(lead_lag_path, index_col=0).squeeze("columns")
         else:
@@ -123,11 +139,11 @@ class HypergraphSnapshots:
         for i in range(len(self._symbols)):
             cluster_index = lead_lag[self._symbols[i]]
             incidence_matrix[i][cluster_index] = 1
-        
+
         return incidence_matrix
 
     def _hypergraph_cora(self, incidence_matrix):
-        
+
         indice_matrix = self._convert_incidence_to_adjacency_torch(incidence_matrix)
         W_e_diag = torch.ones(indice_matrix.size()[1])
 
@@ -163,7 +179,6 @@ class HypergraphSnapshots:
         wavelets = fourier_v @ torch.diag(torch.exp(-1.0 * fourier_e * self.s)) @ torch.transpose(fourier_v, 0, 1)
         wavelets_inv = fourier_v @ torch.diag(torch.exp(fourier_e * self.s)) @ torch.transpose(fourier_v, 0, 1)
         wavelets_t = torch.transpose(wavelets, 0, 1)
-
 
         wavelets[wavelets < 0.00001] = 0
         wavelets_inv[wavelets_inv < 0.00001] = 0

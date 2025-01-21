@@ -21,7 +21,7 @@ model:
   path: supervisor.Supervisor
   confidence_threshold: 0.90
   earlystop: 16
-  batch_size: 32
+  batch_size: 16
   epochs: 500
   hidden_dim: 32
   rnn_units: 16

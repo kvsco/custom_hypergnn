@@ -77,10 +77,9 @@ class DataLoader(DataLoaderBase):
             test_x = df_x_test.to_numpy()
             test_y = df_y_test.to_numpy()
 
-            X_train = np.array([train_x[i: i + self._his_window]
-                                for i in range(len(train_x)-self._his_window)])
-            y_train = np.array([train_y[i + 1: i + self._his_window + 1]
-                                for i in range(len(train_y)-self._his_window)])
+            X_train = np.array([train_x[i: i + self._his_window] for i in range(len(train_x)-self._his_window)])
+            y_train = np.array([train_y[i + 1: i + self._his_window + 1] for i in range(len(train_y)-self._his_window)])
+
             X_test = np.array([test_x[i: i + self._his_window]
                             for i in range(len(test_x)-self._his_window)])
             y_test = np.array([test_y[i + 1: i + self._his_window + 1]
