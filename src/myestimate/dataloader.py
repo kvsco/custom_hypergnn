@@ -2,7 +2,7 @@ import numpy as np
 from torch.utils.data import DataLoader, Subset
 from torch.utils.data import DataLoader, random_split, Subset
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 import joblib
 import pickle
 
@@ -34,7 +34,8 @@ class MyDataLoader():
     def __init__(self, config):
         self._symbols = config['data_dict']["group1"] + config['data_dict']["group2"] + config['data_dict']["group3"] + config['data_dict']["group4"] + config['data_dict']["group5"] + config['data_dict']["group6"]
         self._config = config
-        self.lookback_window = 20
+        self.lookback_window = config['lookback_window']
+        self.lookahead_window = config['lookahead_window']
         self._target_col = config["cols"]
         self._rs_dict = {}
         self._cuda = True
@@ -84,10 +85,21 @@ class MyDataLoader():
                 continue
 
             df = train_data_storage[id]
-            df_scaled = pd.DataFrame(scaler.transform(df), index=df.index, columns=df.columns)
+            df_raw = df[self._target_col]
+            num_train = int(len(df_raw) * 0.7)
+            num_test = int(len(df_raw) * 0.2)
+            num_vali = len(df_raw) - num_train - num_test
 
-            train_dataset_indata = self.construct_data(df_scaled, self._target_col, labels=None)
-            x_train, y_train = self.make_time_dataset(train_dataset_indata)
+            df_data = df_raw.copy()
+            train_data = df_data[0:num_train]
+            scaler = StandardScaler()
+            scaler.fit(train_data.values)
+            data = scaler.transform(df_data.values)
+            ddf = pd.DataFrame(data, index=df_data.index, columns=df_data.columns)
+
+            train_dataset_indata = self.construct_data(ddf, self._target_col, labels=None)
+            # x_train, y_train = self.make_time_dataset(train_dataset_indata) # single step forecast
+            x_train, y_train = self.make_time_dataset_for_multi_step(train_dataset_indata) # multi step forecast
 
             X_train_storage.append(x_train)
             y_train_storage.append(y_train)
@@ -98,21 +110,22 @@ class MyDataLoader():
 
         X_train_storage = []
         y_train_storage = []
-        for id in test_data_storage:
-            if id not in self._symbols:
-                continue
-            df = test_data_storage[id]
-            df_scaled = pd.DataFrame(scaler.transform(df), index=df.index, columns=df.columns)
-
-            test_dataset_indata = self.construct_data(df_scaled, self._target_col, labels=None)
-            x_train, y_train = self.make_time_dataset(test_dataset_indata)
-
-            X_train_storage.append(x_train)
-            y_train_storage.append(y_train)
-
-        X_full = np.stack((X_train_storage), axis=1)
-        y_full = np.stack((y_train_storage), axis=1)
-        total_test_dataset = TimeSeriesDataset(X_full, y_full)
+        # for id in test_data_storage:
+        #     if id not in self._symbols:
+        #         continue
+        #     df = test_data_storage[id]
+        #     df_scaled = pd.DataFrame(scaler.transform(df), index=df.index, columns=df.columns)
+        #
+        #     test_dataset_indata = self.construct_data(df_scaled, self._target_col, labels=None)
+        #     # x_train, y_train = self.make_time_dataset(test_dataset_indata) # sigle step forecast
+        #     x_train, y_train = self.make_time_dataset_for_multi_step(test_dataset_indata) # multi step forecast
+        #
+        #     X_train_storage.append(x_train)
+        #     y_train_storage.append(y_train)
+        #
+        # X_full = np.stack((X_train_storage), axis=1)
+        # y_full = np.stack((y_train_storage), axis=1)
+        # total_test_dataset = TimeSeriesDataset(X_full, y_full)
 
         cat_list = ['group1', 'group2', 'group3', 'group4', 'group5', 'group6']
         cat_dict = {
@@ -144,7 +157,7 @@ class MyDataLoader():
         hypergraphsnapshot = HypergraphSnapshots(self._symbols, self._config["data_dict"], train_data_storage, self._cuda)
         print("Done!")
 
-        return total_train_dataset, total_test_dataset, hypergraphsnapshot, incidence_edges[0]
+        return total_train_dataset, hypergraphsnapshot, incidence_edges[0]
 
     def construct_data(self, data, feature_map, labels=None):
         res = []
@@ -188,11 +201,12 @@ class MyDataLoader():
         data = torch.tensor(x_data).float()
         node_num, total_time_len = data.shape
 
-        rang = range(slide_win, total_time_len-slide_win + 1, slide_stride)
+        lookahead = self.lookahead_window
+        rang = range(slide_win, total_time_len - lookahead, slide_stride)
 
         for i in rang:
-            ft =  data[:, i-slide_win : i]
-            tar = data[:, i : i+slide_win]  # multi -step (node_num, slide_win)
+            ft =  data[:, i - slide_win:i]
+            tar = data[-3, i:i + lookahead]  # multi -step (node_num, slide_win)
 
             x_arr.append(ft)
             y_arr.append(tar)
@@ -200,25 +214,28 @@ class MyDataLoader():
         x = torch.stack(x_arr).contiguous() # (num_samples, node_num, slide_win)
         y = torch.stack(y_arr).contiguous()
         x = x.transpose(1, 2)               # (num_samples, slide_win, node_num)
-        y = y.transpose(1, 2)
 
         return x, y
 
-    def get_loaders(self, train_dataset, test_dataset, batch_size, val_ratio=0.2):
-        dataset_len = int(len(train_dataset))
-        train_use_len = int(dataset_len * (1 - val_ratio))
-        val_use_len = int(dataset_len * val_ratio)
-        val_start_index = random.randrange(train_use_len)
+    def get_loaders(self, dataset, batch_size):
+        dataset_len = int(len(dataset))
+        num_train = int(dataset_len * 0.7)
+        num_val = int(dataset_len * 0.1)
+        num_test = dataset_len - num_train - num_val
+
         indices = torch.arange(dataset_len)
 
-        train_sub_indices = torch.cat([indices[:val_start_index], indices[val_start_index + val_use_len:]])
-        train_subset = Subset(train_dataset, train_sub_indices)
+        # train_indices = indices[:num_train]
+        train_indices = indices[:]
+        val_indices = indices[num_train:num_train + num_val]
+        test_indices = indices[num_train + num_val:]
 
-        val_sub_indices = indices[val_start_index:val_start_index + val_use_len]
-        val_subset = Subset(train_dataset, val_sub_indices)
+        train_subset = Subset(dataset, train_indices)
+        val_subset = Subset(dataset, val_indices)
+        test_subset = Subset(dataset, test_indices)
 
-        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True)
-        val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False)
-        test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, drop_last=True)
+        val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=True, drop_last=True)
+        test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False, drop_last=True)
 
         return train_loader, val_loader, test_loader

@@ -8,11 +8,12 @@ from utils.layers.hwnn import HWNNLayer
 
 
 class Model(nn.Module):
-    def __init__(self, snapshots, num_stock, history_window, num_feature, embedding_dim=16, rnn_hidden_unit=8,
+    def __init__(self, snapshots, num_stock, history_window, lookahead_window, num_feature, embedding_dim=16, rnn_hidden_unit=8,
                  mlp_hidden=16, n_head=4, d_k=8, d_v=8, drop_prob=0.2):
         super(Model, self).__init__()
 
         self.num_stock = num_stock
+        self.lookahead_window = lookahead_window
         self.seq_len = history_window
         self.num_feature = num_feature
         self.rnn_hidden_unit = rnn_hidden_unit
@@ -56,13 +57,15 @@ class Model(nn.Module):
 
         self.mlp_1 = nn.Linear(rnn_hidden_unit * 2, mlp_hidden)
         self.act_1 = nn.ReLU()
-        self.mlp_2 = nn.Linear(mlp_hidden, out_features=self.num_feature)
+        self.mlp_2 = nn.Linear(mlp_hidden, out_features=1)
 
     def forward(self, inputs):
-
+        # raw = (batch, node, lookback, feature)
         inputs = self.embedding(inputs)
+        # (batch, node, lookback window, feature_embedding)
 
-        inputs = inputs.permute(0, 2, 1, 3)  # batch, window, node, feature_embedding
+        inputs = inputs.permute(0, 2, 1, 3)
+        # (batch, lookback window, node, feature_embedding)
 
         inputs = torch.reshape(inputs, (-1, self.seq_len, self.embedding_dim * self.num_stock))
 
@@ -77,13 +80,13 @@ class Model(nn.Module):
 
         enc_output = torch.reshape(enc_output, (-1, self.seq_len, self.num_stock, self.rnn_hidden_unit))
         enc_output = self.dropout(enc_output)
-        enc_output = enc_output.permute(0, 2, 1, 3)  # batch, node, window, feature_embedding(16)
+        enc_output = enc_output.permute(0, 2, 1, 3)
+        # batch, node, window, encoder_hidden_embedding(16)
 
-        # hyper attention
-        # ---------- 각 node 마다 관계성을 학습 ----------
+        # hyper graph convolution 각 node 관계성 학습
         outputs = []
         for i in range(enc_output.shape[0]):
-            x = enc_output[i].reshape(self.num_stock, self.seq_len * self.rnn_hidden_unit)  # 배치 샘플마다.. loop.. 배치 키우면 안되겠다.
+            x = enc_output[i].reshape(self.num_stock, self.seq_len * self.rnn_hidden_unit)  # 배치 샘플마다loop 배치 키우면 안되겠다.
             channel_feature = []
             for snap_index in range(self.hyper_snapshot_num):
                 deep_features_1 = F.leaky_relu(self.convolution_1(x, snap_index, self.snapshots), 0.1)
@@ -96,15 +99,18 @@ class Model(nn.Module):
                 deep_features_3 = deep_features_3 + self.par[ind] * channel_feature[ind]
             outputs.append(deep_features_3)
 
-        hyper_output = torch.stack(outputs).reshape(-1, self.num_stock, self.seq_len, self.rnn_hidden_unit)  # batch, node, window, feature_embedding(16)
+        hyper_output = torch.stack(outputs).reshape(-1, self.num_stock, self.seq_len, self.rnn_hidden_unit)
+        # batch, node, window, feature_embedding(16)
 
-        enc_output = torch.cat((enc_output, hyper_output), dim=3)  # 시간 sequence 학습 + node 관계성 학습 concat # batch, node, window, feature_embedding(32)
-        enc_output = enc_output[:, :, -1, :]
+        enc_output = torch.cat((enc_output, hyper_output), dim=3)  # 시간 sequence 학습 + node 관계성 학습 concat
+        # batch, node, window, feature_embedding(32)
+        # enc_output = enc_output[:, :, -1, :]
 
         # ---------- 예측 값 생성 ----------
         output = self.mlp_1(enc_output)
-        output = F.relu(output)
+        output = F.relu(output) # batch, node, window, feature_embedding(16)
         output = self.mlp_2(output)
+        output = torch.reshape(output, (-1, self.num_stock, self.seq_len))
 
-        return output  # shape ( batch_size, node, feature )
+        return output  # shape (batch, node, window)
 
