@@ -20,7 +20,7 @@ class HypergraphSnapshots:
         sector_hypergraph = self._hypergraph_cora(sector_incidence_matrix)
         self.hypergraph_snapshot.append(sector_hypergraph)
 
-        # ## 2) lead lag 거리기반
+        ## 2) lead lag 거리기반
         # lead_lag_distance_incidence_matrix = self._lead_lag_distance_incidence_matrix()
         # lead_lag_distance_hypergraph = self._hypergraph_cora(lead_lag_distance_incidence_matrix)
         # self.hypergraph_snapshot.append(lead_lag_distance_hypergraph)
@@ -53,14 +53,14 @@ class HypergraphSnapshots:
 
     def _sector_incidence_matrix(self):
 
-        cat_list = ['group1', 'group2', 'group3', 'group4', 'group5', 'group6']
+        cat_list = ['group1', 'group2', 'group3']#, 'group4', 'group5', 'group6']
         cat_dict = {
             'group1': 0,
             'group2': 1,
             'group3': 2,
-            'group4': 3,
-            'group5': 4,
-            'group6': 5,
+            #'group4': 3,
+            #'group5': 4,
+            #'group6': 5,
         }
         df_list = []
 
@@ -80,16 +80,17 @@ class HypergraphSnapshots:
         return incidence_matrix
 
     def _lead_lag_distance_incidence_matrix(self):
-        lead_lag_path = "data/US/sp500/lead_lag_edges_distance/sp500_leadlag_{}.csv".format(self._start_train_date)
+        lead_lag_path = "/home/dyd9800/dataset/exp2_lead_lag.csv"
         if os.path.isfile(lead_lag_path):
             lead_lag = pd.read_csv(lead_lag_path, index_col=0).squeeze("columns")
         else:
-            lead_lag = get_lead_lag_cluster(self._train_data_storage)
-            lead_lag.to_csv(lead_lag_path)
+            print("no lead-lag")
+            # lead_lag = get_lead_lag_cluster(self._train_data_storage)
+            # lead_lag.to_csv(lead_lag_path)
         num_cluster = len(lead_lag.unique())
         incidence_matrix = np.zeros((len(self._symbols), num_cluster))
         for i in range(len(self._symbols)):
-            cluster_index = lead_lag[self._symbols[i]]
+            cluster_index = lead_lag[int(self._symbols[i])]
             incidence_matrix[i][cluster_index] = 1
 
         return incidence_matrix

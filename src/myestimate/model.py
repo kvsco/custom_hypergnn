@@ -5,7 +5,7 @@ from torch_geometric.nn import HypergraphConv
 from utils.layers.temporal_attention import get_subsequent_mask, TemporalAttention
 from utils.layers.drnn_models import DLSTM
 from utils.layers.hwnn import HWNNLayer
-
+from myestimate.revin import RevIN
 
 class Model(nn.Module):
     def __init__(self, snapshots, num_stock, history_window, lookahead_window, num_feature, embedding_dim=16, rnn_hidden_unit=8,
@@ -20,6 +20,8 @@ class Model(nn.Module):
         self.drop_prob = drop_prob
         self.embedding_dim = embedding_dim
         self.mlp_hidden = mlp_hidden
+        self.revin = RevIN(1)
+        print("using revin normalization.")
 
         self.snapshots = snapshots
         self.hyper_snapshot_num = len(self.snapshots.hypergraph_snapshot)
@@ -58,9 +60,20 @@ class Model(nn.Module):
         self.mlp_1 = nn.Linear(rnn_hidden_unit * 2, mlp_hidden)
         self.act_1 = nn.ReLU()
         self.mlp_2 = nn.Linear(mlp_hidden, out_features=1)
+        # 추가
+        self.cnn_decoder = nn.Sequential(
+            nn.Conv1d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Conv1d(in_channels=64, out_channels=32, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Conv1d(in_channels=32, out_channels=1, kernel_size=3, stride=2, padding=1)
+        )
 
     def forward(self, inputs):
         # raw = (batch, node, lookback, feature)
+        # target_feature = inputs[...,-3] # tps
+        # target_feature = self.revin(target_feature, mode='norm')
+        # inputs[...,-3] = target_feature
         inputs = self.embedding(inputs)
         # (batch, node, lookback window, feature_embedding)
 
@@ -104,13 +117,15 @@ class Model(nn.Module):
 
         enc_output = torch.cat((enc_output, hyper_output), dim=3)  # 시간 sequence 학습 + node 관계성 학습 concat
         # batch, node, window, feature_embedding(32)
-        # enc_output = enc_output[:, :, -1, :]
 
         # ---------- 예측 값 생성 ----------
-        output = self.mlp_1(enc_output)
-        output = F.relu(output) # batch, node, window, feature_embedding(16)
-        output = self.mlp_2(output)
-        output = torch.reshape(output, (-1, self.num_stock, self.seq_len))
+        # output = self.mlp_1(enc_output)
+        # output = F.relu(output) # batch, node, window, feature_embedding(16)
+        # output = self.mlp_2(output)
+        enc_output = enc_output.permute(0, 1, 3, 2).reshape(-1, 32, self.seq_len)
+        output = self.cnn_decoder(enc_output)
+        output = output.view(-1, self.num_stock, self.lookahead_window)
+        # output = self.revin(output, mode='denorm')
 
         return output  # shape (batch, node, window)
 

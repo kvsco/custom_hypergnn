@@ -32,13 +32,78 @@ class TimeSeriesDataset(Dataset):
 
 class MyDataLoader():
     def __init__(self, config):
-        self._symbols = config['data_dict']["group1"] + config['data_dict']["group2"] + config['data_dict']["group3"] + config['data_dict']["group4"] + config['data_dict']["group5"] + config['data_dict']["group6"]
+        self._symbols = ['machine_1', 'machine_2', 'machine_3', 'machine_4', 'machine_5', 'machine_6', 'machine_7', 'machine_8', 'machine_9', 'machine_10', 'machine_11', 'machine_12']
+        #config['data_dict']["group1"] + config['data_dict']["group2"] + config['data_dict']["group3"] + config['data_dict']["group4"] + config['data_dict']["group5"] + config['data_dict']["group6"]
         self._config = config
         self.lookback_window = config['lookback_window']
         self.lookahead_window = config['lookahead_window']
         self._target_col = config["cols"]
         self._rs_dict = {}
         self._cuda = True
+
+    def get_data_for_machine(self):
+        path = '/home/dyd9800/dataset/'
+        print("Downloading data...")
+        with open(path + "machine_train_storage.pkl", 'rb') as f:
+            train_data_storage = pickle.load(f)
+
+        print("PreProcessing data...")
+        X_train_storage = []
+        y_train_storage = []
+        for id in train_data_storage:
+            if id not in self._symbols:
+                continue
+
+            df = train_data_storage[id][:11600]
+            df_raw = df[self._target_col]
+            num_train = 8119
+
+            df_data = df_raw.copy()
+            train_data = df_data[0:num_train]
+            scaler = StandardScaler()
+            scaler.fit(train_data.values)
+            data = scaler.transform(df_data.values)
+            ddf = pd.DataFrame(data, index=df_data.index, columns=df_data.columns)
+
+            train_dataset_indata = self.construct_data(ddf, self._target_col, labels=None)
+            # x_train, y_train = self.make_time_dataset(train_dataset_indata) # single step forecast
+            x_train, y_train = self.make_time_dataset_for_multi_step(train_dataset_indata) # multi step forecast
+
+            X_train_storage.append(x_train)
+            y_train_storage.append(y_train)
+
+        X_full = np.stack((X_train_storage), axis=1)
+        y_full = np.stack((y_train_storage), axis=1)
+        total_train_dataset = TimeSeriesDataset(X_full, y_full)
+
+        cat_list = ['group1', 'group2', 'group3']
+        cat_dict = {
+            'group1': 0,
+            'group2': 1,
+            'group3': 2
+        }
+        df_list = []
+
+        for group_name, target_list in self._config["data_dict"].items():
+            for target in target_list:
+                df_list.append({'target_id': target, 'group': group_name})
+
+        cat_df = pd.DataFrame(df_list)
+        cat_df = cat_df.set_index('target_id')
+        incidence_matrix = np.zeros((len(self._symbols), len(cat_list)))
+
+        for i in range(len(self._symbols)):
+            cat_key = cat_df.loc[self._symbols[i]].group
+            cat_index = cat_dict[cat_key]
+            incidence_matrix[i][cat_index] = 1
+
+        inci_sparse = sparse.coo_matrix(incidence_matrix)
+        incidence_edges = utils.from_scipy_sparse_matrix(inci_sparse)
+        hypergraphsnapshot = HypergraphSnapshots(self._symbols, self._config["data_dict"], train_data_storage, self._cuda)
+        print("Done!")
+
+        return total_train_dataset, hypergraphsnapshot, incidence_edges[0]
+
 
     def get_data(self):
         path = '/home/dyd9800/dataset/'
@@ -108,24 +173,6 @@ class MyDataLoader():
         y_full = np.stack((y_train_storage), axis=1)
         total_train_dataset = TimeSeriesDataset(X_full, y_full)
 
-        X_train_storage = []
-        y_train_storage = []
-        # for id in test_data_storage:
-        #     if id not in self._symbols:
-        #         continue
-        #     df = test_data_storage[id]
-        #     df_scaled = pd.DataFrame(scaler.transform(df), index=df.index, columns=df.columns)
-        #
-        #     test_dataset_indata = self.construct_data(df_scaled, self._target_col, labels=None)
-        #     # x_train, y_train = self.make_time_dataset(test_dataset_indata) # sigle step forecast
-        #     x_train, y_train = self.make_time_dataset_for_multi_step(test_dataset_indata) # multi step forecast
-        #
-        #     X_train_storage.append(x_train)
-        #     y_train_storage.append(y_train)
-        #
-        # X_full = np.stack((X_train_storage), axis=1)
-        # y_full = np.stack((y_train_storage), axis=1)
-        # total_test_dataset = TimeSeriesDataset(X_full, y_full)
 
         cat_list = ['group1', 'group2', 'group3', 'group4', 'group5', 'group6']
         cat_dict = {
@@ -206,7 +253,7 @@ class MyDataLoader():
 
         for i in rang:
             ft =  data[:, i - slide_win:i]
-            tar = data[-3, i:i + lookahead]  # multi -step (node_num, slide_win)
+            tar = data[8, i:i + lookahead]  # multi -step (node_num, slide_win) -3:tps 0:txn_elapse
 
             x_arr.append(ft)
             y_arr.append(tar)
@@ -226,11 +273,12 @@ class MyDataLoader():
         indices = torch.arange(dataset_len)
 
         # train_indices = indices[:num_train]
-        train_indices = indices[:]
+        train_indices = indices[:num_train]
         val_indices = indices[num_train:num_train + num_val]
         test_indices = indices[num_train + num_val:]
+        combined_indices = torch.cat((train_indices, test_indices))
 
-        train_subset = Subset(dataset, train_indices)
+        train_subset = Subset(dataset, combined_indices)
         val_subset = Subset(dataset, val_indices)
         test_subset = Subset(dataset, test_indices)
 

@@ -35,15 +35,16 @@ class Trainer():
         self._config = config
 
         # group cluster num
-        self._symbols = config['data_dict']["group1"] + config['data_dict']["group2"] + config['data_dict']["group3"] + config['data_dict']["group4"] + config['data_dict']["group5"] + config['data_dict']["group6"]
+        self._symbols = config['data_dict']["group1"] + config['data_dict']["group2"] + config['data_dict']["group3"]
+        #config['data_dict']["group1"] + config['data_dict']["group2"] + config['data_dict']["group3"] + config['data_dict']["group4"] + config['data_dict']["group5"] + config['data_dict']["group6"]
 
         # model parameters
         self._hidden_dim = 128
         self._dropout = 0.1
         self._batch_size = 16
-        self._epochs = 20
+        self._epochs = 11
         self._cuda = True  # in gpu server
-        self._earlystop = 10
+        self._earlystop = 3
         self._eval_iter = 10
         self._rnn_units = 16
 
@@ -51,7 +52,8 @@ class Trainer():
         self.lookback_window = config['lookback_window']
         self.lookahead_window = config['lookahead_window']
         self._data_loader = MyDataLoader(self._config)
-        self.train_dataset, self._hypergraphsnapshot, self._incidence_edges = self._data_loader.get_data()
+        # self.train_dataset, self._hypergraphsnapshot, self._incidence_edges = self._data_loader.get_data()
+        self.train_dataset, self._hypergraphsnapshot, self._incidence_edges = self._data_loader.get_data_for_machine()
         self.train_loader, self.val_loader, self.test_loader = self._data_loader.get_loaders(self.train_dataset, self._batch_size)
 
         # Initialize model
@@ -104,9 +106,8 @@ class Trainer():
                     y_batch = y_batch.cuda()
 
                     outputs = model(X_batch) # (16, 48, 60)
-                    outputs = outputs[:, :, :30] # (16, 48, 30)
-                    pred = outputs[:, 0, :]
-                    true = y_batch[:, 0, :]
+                    pred = outputs#[:, 0, :] # 첫번째 node
+                    true = y_batch#[:, 0, :] # 첫번째 node
                     loss = criterion(pred, true)
 
                     loss.backward()
@@ -138,13 +139,14 @@ class Trainer():
                         X_batch = X_batch.cuda()
                         y_batch = y_batch.cuda()
 
-                        outputs = model(X_batch)
-                        outputs = outputs[:, :, :30]
-                        loss = criterion(outputs[:, 0, :], y_batch[:, 0, :])
+                        outputs = model(X_batch)  # (16, 48, 60)
+                        pred = outputs#[:, 0, :]  # 첫번째 node
+                        true = y_batch#[:, 0, :]  # 첫번째 node
+                        loss = criterion(pred, true)
                         # val_loss += loss.item() * X_batch.size(0)
                         val_loss.append(loss.item())
-                        val_preds.append(outputs.cpu())
-                        val_targets.append(y_batch.cpu())
+                        val_preds.append(pred.cpu())
+                        val_targets.append(true.cpu())
 
                 val_loss = np.average(val_loss)
                 # avg_val_loss = val_loss / len(self.val_loader.dataset)
@@ -211,22 +213,23 @@ class Trainer():
                     X_batch = X_batch.cuda()
                     y_batch = y_batch.cuda()
 
-                outputs = model(X_batch)
-                outputs = outputs[:, :, :30]
-                loss = criterion(outputs[:, 0, :], y_batch[:, 0, :])
+                outputs = model(X_batch)  # (16, 48, 60)
+                outputs = outputs#[:, 0, :]  # 첫번째 node
+                y_batch = y_batch#[:, 0, :]  # 첫번째 node
 
-                pred = outputs[:, 0, :].detach().cpu().numpy()
-                true = y_batch[:, 0, :].detach().cpu().numpy()
-
-                # test_loss += loss.item() * X_batch.size(0)
-
+                pred = outputs[:, :, :].detach().cpu().numpy()
+                true = y_batch[:, :, :].detach().cpu().numpy()
                 preds.append(pred)
                 trues.append(true)
-                if i % 20 == 0:
-                    input = X_batch.detach().cpu().numpy() # input[0, 0, :, -3]
-                    gt = np.concatenate((input[14, 0, :, -3], true[14, :]), axis=0) # -3 : tps
-                    pd = np.concatenate((input[14, 0, :, -3], pred[14, :]), axis=0)
-                    self.visual(gt, pd, '3701_tps', os.path.join(folder_path, str(i) + '.pdf'))
+                # test_loss += loss.item() * X_batch.size(0)
+
+
+                input = X_batch.detach().cpu().numpy() # input[0, 0, :, -3]
+                # gt = np.concatenate((input[14, 0, :, 0], true[14, :]), axis=0) # -3 : tps 0 : txn
+                # pd = np.concatenate((input[14, 0, :, 0], pred[14, :]), axis=0)
+                gt = np.concatenate((input[13, 6, :, 8], true[13, 6, :]), axis=0)
+                pd = np.concatenate((input[13, 6, :, 8], pred[13, 6, :]), axis=0)
+                self.visual(gt, pd, 'machine_7_8', os.path.join(folder_path, str(i) + f'.pdf'))
 
         preds = np.array(preds)
         trues = np.array(trues)
