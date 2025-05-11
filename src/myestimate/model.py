@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
+import numpy as np
 from torch_geometric.nn import HypergraphConv
 from utils.layers.temporal_attention import get_subsequent_mask, TemporalAttention
 from utils.layers.drnn_models import DLSTM
@@ -61,19 +62,14 @@ class Model(nn.Module):
         self.act_1 = nn.ReLU()
         self.mlp_2 = nn.Linear(mlp_hidden, out_features=1)
         # 추가
-        self.cnn_decoder = nn.Sequential(
-            nn.Conv1d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.Conv1d(in_channels=64, out_channels=32, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.Conv1d(in_channels=32, out_channels=1, kernel_size=3, stride=2, padding=1)
+        self.cnn_decoder = CNNDecoder(
+            in_channels=32,  # feature embedding dim
+            hidden_channels=64,
+            out_channels=1,  # 최종 y 하나
+            lookahead_window=self.lookahead_window
         )
 
     def forward(self, inputs):
-        # raw = (batch, node, lookback, feature)
-        # target_feature = inputs[...,-3] # tps
-        # target_feature = self.revin(target_feature, mode='norm')
-        # inputs[...,-3] = target_feature
         inputs = self.embedding(inputs)
         # (batch, node, lookback window, feature_embedding)
 
@@ -93,19 +89,24 @@ class Model(nn.Module):
 
         enc_output = torch.reshape(enc_output, (-1, self.seq_len, self.num_stock, self.rnn_hidden_unit))
         enc_output = self.dropout(enc_output)
-        enc_output = enc_output.permute(0, 2, 1, 3)
-        # batch, node, window, encoder_hidden_embedding(16)
+        enc_output = enc_output.permute(0, 2, 1, 3)  # batch, node, window, encoder_hidden_embedding(16)
 
         # hyper graph convolution 각 node 관계성 학습
         outputs = []
+        influence_list = []
         for i in range(enc_output.shape[0]):
             x = enc_output[i].reshape(self.num_stock, self.seq_len * self.rnn_hidden_unit)  # 배치 샘플마다loop 배치 키우면 안되겠다.
             channel_feature = []
             for snap_index in range(self.hyper_snapshot_num):
-                deep_features_1 = F.leaky_relu(self.convolution_1(x, snap_index, self.snapshots), 0.1)
+                def1, _ = self.convolution_1(x, snap_index, self.snapshots)
+                deep_features_1 = F.leaky_relu(def1, 0.1)
                 deep_features_1 = self.dropout(deep_features_1)
-                deep_features_2 = self.convolution_2(deep_features_1, snap_index, self.snapshots)
+                deep_features_2, influence_matrix = self.convolution_2(deep_features_1, snap_index, self.snapshots)
                 deep_features_2 = F.leaky_relu(deep_features_2, 0.1)
+
+                influence_list.append(influence_matrix[0, :])  # shape: (node,)
+                # print(influence_list)
+
                 channel_feature.append(deep_features_2)
             deep_features_3 = torch.zeros_like(channel_feature[0])
             for ind in range(self.hyper_snapshot_num):
@@ -119,13 +120,24 @@ class Model(nn.Module):
         # batch, node, window, feature_embedding(32)
 
         # ---------- 예측 값 생성 ----------
-        # output = self.mlp_1(enc_output)
-        # output = F.relu(output) # batch, node, window, feature_embedding(16)
-        # output = self.mlp_2(output)
         enc_output = enc_output.permute(0, 1, 3, 2).reshape(-1, 32, self.seq_len)
         output = self.cnn_decoder(enc_output)
         output = output.view(-1, self.num_stock, self.lookahead_window)
-        # output = self.revin(output, mode='denorm')
 
-        return output  # shape (batch, node, window)
+        return output, influence_list  # shape (batch, node, window)
 
+
+class CNNDecoder(nn.Module):
+    def __init__(self, in_channels, hidden_channels, out_channels, lookahead_window):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Conv1d(in_channels, hidden_channels, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Conv1d(hidden_channels, hidden_channels, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool1d(lookahead_window),  # ⭐️ 원하는 출력 길이로 압축
+            nn.Conv1d(hidden_channels, out_channels, kernel_size=1)  # 채널 축소
+        )
+
+    def forward(self, x):
+        return self.net(x)

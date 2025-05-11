@@ -20,10 +20,27 @@ class HypergraphSnapshots:
         sector_hypergraph = self._hypergraph_cora(sector_incidence_matrix)
         self.hypergraph_snapshot.append(sector_hypergraph)
 
-        ## 2) lead lag 거리기반
-        # lead_lag_distance_incidence_matrix = self._lead_lag_distance_incidence_matrix()
-        # lead_lag_distance_hypergraph = self._hypergraph_cora(lead_lag_distance_incidence_matrix)
-        # self.hypergraph_snapshot.append(lead_lag_distance_hypergraph)
+        ## 2) 활동량기반
+        activity_matrix = self._activity_matrix()
+        activity_hypergraph = self._hypergraph_cora(activity_matrix)
+        self.hypergraph_snapshot.append(activity_hypergraph)
+
+        ## 3) 알고리즘기반 DTW
+        # dtw_matrix = self._dtw_matrix()
+        # dtw_hypergraph = self._hypergraph_cora(dtw_matrix)
+        # self.hypergraph_snapshot.append(dtw_hypergraph)
+
+        # 4) 랜덤 구성
+        # random_matrix = self._random_matrix()
+        # random_hypergraph = self._hypergraph_cora(random_matrix)
+        # self.hypergraph_snapshot.append(random_hypergraph)
+
+        # 5) lead lag (pearson correl) 기반
+        lead_lag_distance_incidence_matrix = self._lead_lag_distance_incidence_matrix()
+        lead_lag_distance_hypergraph = self._hypergraph_cora(lead_lag_distance_incidence_matrix)
+        self.hypergraph_snapshot.append(lead_lag_distance_hypergraph)
+
+
         #
         # ## 3) lead lag 피어슨 상관계수 기반
         # lead_lag_pearson_incidence_matrix = self._lead_lag_pearson_incidence_matrix()
@@ -51,16 +68,54 @@ class HypergraphSnapshots:
                     adj_matrix[i, connected_nodes_indexes] = 1
         return torch.Tensor(adj_matrix)
 
-    def _sector_incidence_matrix(self):
 
-        cat_list = ['group1', 'group2', 'group3']#, 'group4', 'group5', 'group6']
+    def _dtw_matrix(self):
+        return
+
+    def _activity_matrix(self):
+        activity = {
+            "group1": ['1201', '1202', '1203', '1204', '3205', '1206'],
+            "group2": ['3204', '1205', '3505', '3501', '3502'],
+            "group3": ['3207', '3206', '3308', '3208', '3701', '3307', '3209', '3313', '3506', '3304', '3312', '1301'],
+            "group4": ['1210', '1207', '1209', '3706', '1208', '3507', '3504', '3707', '1303', '3503', '3704', '1302',
+                       '1304'],
+            "group5": ['3309', '3703', '1309', '1307', '1306', '3310', '1310', '1305', '1308', '3508', '3708', '3311']
+        }
+        cat_list = ['group1', 'group2', 'group3', 'group4', 'group5']
         cat_dict = {
             'group1': 0,
             'group2': 1,
             'group3': 2,
-            #'group4': 3,
-            #'group5': 4,
-            #'group6': 5,
+            'group4': 3,
+            'group5': 4,
+        }
+        df_list = []
+        for group_name, target_list in activity.items():
+            for target in target_list:
+                df_list.append({'target_id': target, 'group': group_name})
+
+        cat_df = pd.DataFrame(df_list)
+        cat_df = cat_df.set_index('target_id')
+        incidence_matrix = np.zeros((len(self._symbols), len(cat_list)))
+
+        for i in range(len(self._symbols)):
+            cat_key = cat_df.loc[self._symbols[i]].group
+            cat_index = cat_dict[cat_key]
+            incidence_matrix[i][cat_index] = 1
+
+        return incidence_matrix
+
+    def _sector_incidence_matrix(self):
+
+        # cat_list = ['group1', 'group2', 'group3']#, 'group4', 'group5', 'group6']
+        cat_list = ['group1', 'group2', 'group3', 'group4', 'group5', 'group6']
+        cat_dict = {
+            'group1': 0,
+            'group2': 1,
+            'group3': 2,
+            'group4': 3,
+            'group5': 4,
+            'group6': 5,
         }
         df_list = []
 
@@ -78,6 +133,29 @@ class HypergraphSnapshots:
             incidence_matrix[i][cat_index] = 1
 
         return incidence_matrix
+
+    def _random_matrix(self):
+        cat_list = ['group1', 'group2', 'group3', 'group4', 'group5', 'group6', 'group7', 'group8' ]
+        cat_dict = {
+            'group1': 0,
+            'group2': 1,
+            'group3': 2,
+            'group4': 3,
+            'group5': 4,
+            'group6': 5,
+            'group7': 6,
+            'group8': 7,
+        }
+
+        incidence_matrix = np.zeros((len(self._symbols), len(cat_list)))
+
+        for i in range(len(self._symbols)):
+            cat_key = np.random.choice(cat_list)
+            cat_index = cat_dict[cat_key]
+            incidence_matrix[i][cat_index] = 1
+
+        return incidence_matrix
+
 
     def _lead_lag_distance_incidence_matrix(self):
         lead_lag_path = "/home/dyd9800/dataset/exp2_lead_lag.csv"

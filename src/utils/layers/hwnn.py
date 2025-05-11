@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 
 class HWNNLayer(torch.nn.Module):
     def __init__(self, input_size, output_size, num_stock, K1=2, K2=2, approx=False, data=None):

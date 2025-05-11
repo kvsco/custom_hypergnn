@@ -8,12 +8,32 @@ import pickle
 
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import torch.nn as nn
+import torch.nn.functional as F
 from datetime import datetime
 
 
 from myestimate.dataloader import MyDataLoader
 from myestimate.model import Model
 
+
+class HuberLoss(nn.Module):
+    def __init__(self, delta=1.0):
+        super(HuberLoss, self).__init__()
+        self.delta = delta
+
+    def forward(self, pred, target):
+        return F.smooth_l1_loss(pred, target, beta=self.delta)
+
+class MultiScaleLoss(nn.Module):
+    def __init__(self, scales=[1, 5, 10, 30]):
+        super(MultiScaleLoss, self).__init__()
+        self.scales = scales
+
+    def forward(self, pred, target):
+        loss = 0
+        for scale in self.scales:
+            loss += F.mse_loss(pred[:, :scale], target[:, :scale])
+        return loss / len(self.scales)
 
 class CustomMSELoss(nn.Module):
     def __init__(self):
@@ -35,14 +55,16 @@ class Trainer():
         self._config = config
 
         # group cluster num
-        self._symbols = config['data_dict']["group1"] + config['data_dict']["group2"] + config['data_dict']["group3"]
+        self._symbols = config['data_dict']["group1"] + config['data_dict']["group2"] + config['data_dict']["group3"] + config['data_dict']["group4"] + config['data_dict']["group5"] + config['data_dict']["group6"]
+        # self._symbols = config['data_dict']["group1"] + config['data_dict']["group2"] + config['data_dict']["group3"]
+        # config['data_dict']["group1"] + config['data_dict']["group2"] + config['data_dict']["group3"]
         #config['data_dict']["group1"] + config['data_dict']["group2"] + config['data_dict']["group3"] + config['data_dict']["group4"] + config['data_dict']["group5"] + config['data_dict']["group6"]
 
         # model parameters
         self._hidden_dim = 128
         self._dropout = 0.1
-        self._batch_size = 16
-        self._epochs = 11
+        self._batch_size = config['batch']
+        self._epochs = 30
         self._cuda = True  # in gpu server
         self._earlystop = 3
         self._eval_iter = 10
@@ -52,8 +74,8 @@ class Trainer():
         self.lookback_window = config['lookback_window']
         self.lookahead_window = config['lookahead_window']
         self._data_loader = MyDataLoader(self._config)
-        # self.train_dataset, self._hypergraphsnapshot, self._incidence_edges = self._data_loader.get_data()
-        self.train_dataset, self._hypergraphsnapshot, self._incidence_edges = self._data_loader.get_data_for_machine()
+        self.train_dataset, self._hypergraphsnapshot, self._incidence_edges = self._data_loader.get_data()
+        # self.train_dataset, self._hypergraphsnapshot, self._incidence_edges = self._data_loader.get_data_for_machine()
         self.train_loader, self.val_loader, self.test_loader = self._data_loader.get_loaders(self.train_dataset, self._batch_size)
 
         # Initialize model
@@ -75,10 +97,10 @@ class Trainer():
         if self._cuda:
             model = model.cuda()
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
         # optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=0.0)
 
-        criterion = nn.MSELoss() #CustomMSELoss()
+        criterion = nn.MSELoss() #CustomMSELoss() #HuberLoss() #MultiScaleLoss()
         epoch = 1
         epsilon = 1e-7
         min_loss = 1e+13
@@ -197,42 +219,62 @@ class Trainer():
 
         self._model = checkpoint
         model = self._model
-        criterion = nn.MSELoss() #CustomMSELoss()
-
         # [ 테스트셋 평가 ]
         model.eval()
 
         preds = []
         trues = []
-        inputx = []
+        modis = []
+        origs = []
+        influences = []
         test_loss = 0
         epsilon = 1e-7
         with torch.no_grad():
-            for i, (X_batch, y_batch) in enumerate(self.test_loader):
+            for time_idx, (X_batch, y_batch) in enumerate(self.test_loader):
                 if self._cuda:
                     X_batch = X_batch.cuda()
                     y_batch = y_batch.cuda()
 
-                outputs = model(X_batch)  # (16, 48, 60)
-                outputs = outputs#[:, 0, :]  # 첫번째 node
-                y_batch = y_batch#[:, 0, :]  # 첫번째 node
+                X_batch_original = X_batch.clone()
+                X_modified = X_batch.clone()
 
-                pred = outputs[:, :, :].detach().cpu().numpy()
-                true = y_batch[:, :, :].detach().cpu().numpy()
+                # (1, 48, 120, 13)
+
+                # anomaly_entity_ids = [1,2,3]
+                #
+                # if 300 <= time_idx < 400 or 800 <= time_idx < 900:
+                #     for entity_id in anomaly_entity_ids:
+                #         noise = torch.randn_like(X_modified[:, entity_id, :]) * 0.9
+                #         X_modified[:, entity_id, :] += noise
+                #         # X_modified[:, entity_id, :] = 0.0  # 완전 마스킹
+
+                outputs, influence_list = model(X_modified)  # (16, 48, 60)
+
+                pred = outputs.detach().cpu().numpy()
+                true = y_batch.detach().cpu().numpy()
+                modified_input = X_modified.detach().cpu().numpy()
+                original_input = X_batch_original.detach().cpu().numpy()
+
+                influence_np_list = [tensor.detach().cpu().numpy() for tensor in influence_list]
                 preds.append(pred)
                 trues.append(true)
+                influences.append(influence_np_list)
+                modis.append(modified_input)
+                origs.append(original_input)
                 # test_loss += loss.item() * X_batch.size(0)
 
-
-                input = X_batch.detach().cpu().numpy() # input[0, 0, :, -3]
-                # gt = np.concatenate((input[14, 0, :, 0], true[14, :]), axis=0) # -3 : tps 0 : txn
-                # pd = np.concatenate((input[14, 0, :, 0], pred[14, :]), axis=0)
-                gt = np.concatenate((input[13, 6, :, 8], true[13, 6, :]), axis=0)
-                pd = np.concatenate((input[13, 6, :, 8], pred[13, 6, :]), axis=0)
-                self.visual(gt, pd, 'machine_7_8', os.path.join(folder_path, str(i) + f'.pdf'))
+                # input = X_batch.detach().cpu().numpy() # input[0, 0, :, -3]
+                # gt = np.concatenate((input[0, 0, :, -3], true[0, 0, :]), axis=0) # -3 : tps 0 : txn_elaps
+                # pd = np.concatenate((input[0, 0, :, -3], pred[0, 0, :]), axis=0)
+                # # gt = np.concatenate((input[13, 6, :, 8], true[13, 6, :]), axis=0)
+                # # pd = np.concatenate((input[13, 6, :, 8], pred[13, 6, :]), axis=0)
+                # self.visual(gt, pd, '3701_tps', os.path.join(folder_path, str(i) + f'.pdf')) # machine_7_8
 
         preds = np.array(preds)
         trues = np.array(trues)
+        influences = np.array(influences)
+        modifieds = np.array(modis)
+        originals = np.array(origs)
         print('test shape:', preds.shape, trues.shape)
 
         # [ 성능 평가 ]
@@ -252,6 +294,9 @@ class Trainer():
         np.save(folder_path + 'metrics.npy', np.array([mae, mse, rmse, mape, mspe]))
         np.save(folder_path + 'pred.npy', preds)
         np.save(folder_path + 'true.npy', trues)
+        np.save(folder_path + 'influences.npy', influences)
+        np.save(folder_path + 'modified.npy', modifieds)
+        np.save(folder_path + 'originals.npy', originals)
         return
 
     def visual(self, true, preds=None, target='feature', name='./pic/test.pdf'):

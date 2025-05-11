@@ -32,7 +32,10 @@ class TimeSeriesDataset(Dataset):
 
 class MyDataLoader():
     def __init__(self, config):
-        self._symbols = ['machine_1', 'machine_2', 'machine_3', 'machine_4', 'machine_5', 'machine_6', 'machine_7', 'machine_8', 'machine_9', 'machine_10', 'machine_11', 'machine_12']
+        self._symbols = config['data_dict']["group1"] + config['data_dict']["group2"] + config['data_dict']["group3"] + config['data_dict']["group4"] + config['data_dict']["group5"] + config['data_dict']["group6"]
+        # self._symbols = ['machine_1', 'machine_2', 'machine_3', 'machine_4', 'machine_5', 'machine_6', 'machine_7', 'machine_8', 'machine_9', 'machine_10', 'machine_11', 'machine_12']
+
+        #['machine_1', 'machine_2', 'machine_3', 'machine_4', 'machine_5', 'machine_6', 'machine_7', 'machine_8', 'machine_9', 'machine_10', 'machine_11', 'machine_12']
         #config['data_dict']["group1"] + config['data_dict']["group2"] + config['data_dict']["group3"] + config['data_dict']["group4"] + config['data_dict']["group5"] + config['data_dict']["group6"]
         self._config = config
         self.lookback_window = config['lookback_window']
@@ -275,7 +278,7 @@ class MyDataLoader():
         # train_indices = indices[:num_train]
         train_indices = indices[:num_train]
         val_indices = indices[num_train:num_train + num_val]
-        test_indices = indices[num_train + num_val:]
+        test_indices = indices[-1000:]
         combined_indices = torch.cat((train_indices, test_indices))
 
         train_subset = Subset(dataset, combined_indices)
@@ -284,6 +287,6 @@ class MyDataLoader():
 
         train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, drop_last=True)
         val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=True, drop_last=True)
-        test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False, drop_last=True)
+        test_loader = DataLoader(test_subset, batch_size=1, shuffle=False, drop_last=True)
 
         return train_loader, val_loader, test_loader

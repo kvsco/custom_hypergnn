@@ -12,16 +12,17 @@ def run_model(config, flag='train'):
         model.train(setting)
         model.test(setting)
     elif flag == 'test':
-        setting = '2025_02_25_14_45_30'
+        setting = '2025_05_09'
         model.test(setting)
     torch.cuda.empty_cache()
     return True
 
 
 if __name__ == '__main__':
-    config1 = {
-        'lookback_window' : 60,
+    config = {
+        'lookback_window' : 120,
         'lookahead_window' : 30,
+        'batch': 4,
         'data_dict' : {
             "group1" : ['3701', '3703', '3704', '3706', '3707', '3708'],
             "group2" : ['3501', '3502', '3503', '3504', '3505', '3506', '3507', '3508'],
@@ -34,9 +35,10 @@ if __name__ == '__main__':
                 'sql_elapse', 'sql_prepare_count', 'sql_fetch_count', 'os_cpu', 'tps', 'jvm_gc_time', 'jvm_gc_count'],
         'columns_to_exclude' : ['open_socket_count', 'os_used_memory', 'jvm_heap_usage', 'jvm_thread_count']
     }
-    config = {
-        'lookback_window': 60,
+    config2 = {
+        'lookback_window': 30,
         'lookahead_window': 30,
+        'batch': 64,
         'data_dict': {
             "group1": ['machine_1', 'machine_5', 'machine_9', 'machine_11'],
             "group2": ['machine_2', 'machine_4', 'machine_6', 'machine_8'],
@@ -47,4 +49,5 @@ if __name__ == '__main__':
     }
     print(f"usage feature : {len(config['cols'])}")
     print(f"un-used feature : {len(config['columns_to_exclude'])}")
+    print(f"hyper-parameter setting // lookback : {config['lookback_window']} , lookahead : {config['lookahead_window']}, batch : {config['batch']}")
     performances = run_model(config, flag='test')
