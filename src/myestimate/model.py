@@ -27,6 +27,11 @@ class Model(nn.Module):
         self.snapshots = snapshots
         self.hyper_snapshot_num = len(self.snapshots.hypergraph_snapshot)
         self.par = torch.nn.Parameter(torch.Tensor(self.hyper_snapshot_num))
+        self.dynamic_par_gen = nn.Sequential(
+            nn.Linear(self.rnn_hidden_unit * self.seq_len, 64),
+            nn.ReLU(),
+            nn.Linear(64, self.hyper_snapshot_num)
+        )
         torch.nn.init.uniform_(self.par, 0, 0.99)
 
         self.embedding = nn.Linear(num_feature, embedding_dim)
@@ -63,7 +68,7 @@ class Model(nn.Module):
         self.mlp_2 = nn.Linear(mlp_hidden, out_features=1)
         # 추가
         self.cnn_decoder = CNNDecoder(
-            in_channels=32,  # feature embedding dim
+            in_channels=16,  # feature embedding dim
             hidden_channels=64,
             out_channels=1,  # 최종 y 하나
             lookahead_window=self.lookahead_window
@@ -91,40 +96,42 @@ class Model(nn.Module):
         enc_output = self.dropout(enc_output)
         enc_output = enc_output.permute(0, 2, 1, 3)  # batch, node, window, encoder_hidden_embedding(16)
 
-        # hyper graph convolution 각 node 관계성 학습
-        outputs = []
-        influence_list = []
-        for i in range(enc_output.shape[0]):
-            x = enc_output[i].reshape(self.num_stock, self.seq_len * self.rnn_hidden_unit)  # 배치 샘플마다loop 배치 키우면 안되겠다.
-            channel_feature = []
-            for snap_index in range(self.hyper_snapshot_num):
-                def1, _ = self.convolution_1(x, snap_index, self.snapshots)
-                deep_features_1 = F.leaky_relu(def1, 0.1)
-                deep_features_1 = self.dropout(deep_features_1)
-                deep_features_2, influence_matrix = self.convolution_2(deep_features_1, snap_index, self.snapshots)
-                deep_features_2 = F.leaky_relu(deep_features_2, 0.1)
-
-                influence_list.append(influence_matrix[0, :])  # shape: (node,)
-                # print(influence_list)
-
-                channel_feature.append(deep_features_2)
-            deep_features_3 = torch.zeros_like(channel_feature[0])
-            for ind in range(self.hyper_snapshot_num):
-                deep_features_3 = deep_features_3 + self.par[ind] * channel_feature[ind]
-            outputs.append(deep_features_3)
-
-        hyper_output = torch.stack(outputs).reshape(-1, self.num_stock, self.seq_len, self.rnn_hidden_unit)
-        # batch, node, window, feature_embedding(16)
-
-        enc_output = torch.cat((enc_output, hyper_output), dim=3)  # 시간 sequence 학습 + node 관계성 학습 concat
-        # batch, node, window, feature_embedding(32)
+        # # hyper graph convolution 각 node 관계성 학습
+        # outputs = []
+        # influence_list = []
+        # for i in range(enc_output.shape[0]):
+        #     x = enc_output[i].reshape(self.num_stock, self.seq_len * self.rnn_hidden_unit)  # 배치 샘플마다loop 배치 키우면 안되겠다.
+        #     channel_feature = []
+        #     for snap_index in range(self.hyper_snapshot_num):
+        #         def1 = self.convolution_1(x, snap_index, self.snapshots)
+        #         deep_features_1 = F.leaky_relu(def1, 0.1)
+        #         deep_features_1 = self.dropout(deep_features_1)
+        #         def2 = self.convolution_2(deep_features_1, snap_index, self.snapshots)
+        #         deep_features_2 = F.leaky_relu(def2, 0.1)
+        #         channel_feature.append(deep_features_2)
+        #
+        #     x_summary = torch.mean(x, dim=0)  # shape: (self.seq_len * rnn_hidden)
+        #     dynamic_weights = self.dynamic_par_gen(x_summary)  # shape: (num_snapshot,)
+        #     dynamic_weights = F.softmax(dynamic_weights, dim=0)
+        #
+        #     deep_features_3 = torch.zeros_like(channel_feature[0])
+        #     for ind in range(self.hyper_snapshot_num):
+        #         deep_features_3 += dynamic_weights[ind] * channel_feature[ind]
+        #         # deep_features_3 = deep_features_3 + self.par[ind] * channel_feature[ind]
+        #     outputs.append(deep_features_3)
+        #
+        # hyper_output = torch.stack(outputs).reshape(-1, self.num_stock, self.seq_len, self.rnn_hidden_unit)
+        # # batch, node, window, feature_embedding(16)
+        #
+        # enc_output = torch.cat((enc_output, hyper_output), dim=3)  # 시간 sequence 학습 + node 관계성 학습 concat
+        # # batch, node, window, feature_embedding(32)
 
         # ---------- 예측 값 생성 ----------
-        enc_output = enc_output.permute(0, 1, 3, 2).reshape(-1, 32, self.seq_len)
+        enc_output = enc_output.permute(0, 1, 3, 2).reshape(-1, 16, self.seq_len)
         output = self.cnn_decoder(enc_output)
         output = output.view(-1, self.num_stock, self.lookahead_window)
 
-        return output, influence_list  # shape (batch, node, window)
+        return output #, dynamic_weights  # shape (batch, node, window)
 
 
 class CNNDecoder(nn.Module):

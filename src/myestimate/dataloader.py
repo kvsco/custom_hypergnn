@@ -256,7 +256,7 @@ class MyDataLoader():
 
         for i in rang:
             ft =  data[:, i - slide_win:i]
-            tar = data[8, i:i + lookahead]  # multi -step (node_num, slide_win) -3:tps 0:txn_elapse
+            tar = data[-3, i:i + lookahead]  # multi -step (node_num, slide_win) -3:tps 0:txn_elapse
 
             x_arr.append(ft)
             y_arr.append(tar)

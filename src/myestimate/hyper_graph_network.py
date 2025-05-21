@@ -219,6 +219,7 @@ class Trainer():
 
         self._model = checkpoint
         model = self._model
+
         # [ 테스트셋 평가 ]
         model.eval()
 
@@ -227,6 +228,7 @@ class Trainer():
         modis = []
         origs = []
         influences = []
+        influence_list = []
         test_loss = 0
         epsilon = 1e-7
         with torch.no_grad():
@@ -240,25 +242,27 @@ class Trainer():
 
                 # (1, 48, 120, 13)
 
-                # anomaly_entity_ids = [1,2,3]
-                #
-                # if 300 <= time_idx < 400 or 800 <= time_idx < 900:
-                #     for entity_id in anomaly_entity_ids:
-                #         noise = torch.randn_like(X_modified[:, entity_id, :]) * 0.9
-                #         X_modified[:, entity_id, :] += noise
-                #         # X_modified[:, entity_id, :] = 0.0  # 완전 마스킹
+                # anomaly_entity_ids = [6,7,8,9,14,15,16,17,18]
 
-                outputs, influence_list = model(X_modified)  # (16, 48, 60)
+                # # if 300 <= time_idx < 400 or 800 <= time_idx < 900:
+                # if 300 <= time_idx < 700:
+                #     for entity_id in anomaly_entity_ids:
+                #         # noise = torch.randn_like(X_modified[:, entity_id, :]) * 10.0
+                #         # X_modified[:, entity_id, :] += noise
+                #         X_modified[:, entity_id, :] = 0  # 완전 마스킹
+
+
+                outputs = model(X_modified)  # (16, 48, 60)
 
                 pred = outputs.detach().cpu().numpy()
                 true = y_batch.detach().cpu().numpy()
                 modified_input = X_modified.detach().cpu().numpy()
                 original_input = X_batch_original.detach().cpu().numpy()
 
-                influence_np_list = [tensor.detach().cpu().numpy() for tensor in influence_list]
+                # hyperedge_weight = [tensor.detach().cpu().numpy() for tensor in hyperedge_weight]
                 preds.append(pred)
                 trues.append(true)
-                influences.append(influence_np_list)
+                # influences.append(hyperedge_weight)
                 modis.append(modified_input)
                 origs.append(original_input)
                 # test_loss += loss.item() * X_batch.size(0)
@@ -272,7 +276,7 @@ class Trainer():
 
         preds = np.array(preds)
         trues = np.array(trues)
-        influences = np.array(influences)
+        # influences = np.array(influences)
         modifieds = np.array(modis)
         originals = np.array(origs)
         print('test shape:', preds.shape, trues.shape)
@@ -294,7 +298,7 @@ class Trainer():
         np.save(folder_path + 'metrics.npy', np.array([mae, mse, rmse, mape, mspe]))
         np.save(folder_path + 'pred.npy', preds)
         np.save(folder_path + 'true.npy', trues)
-        np.save(folder_path + 'influences.npy', influences)
+        # np.save(folder_path + 'influences.npy', influences)
         np.save(folder_path + 'modified.npy', modifieds)
         np.save(folder_path + 'originals.npy', originals)
         return

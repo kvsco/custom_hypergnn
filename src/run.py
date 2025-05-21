@@ -12,7 +12,7 @@ def run_model(config, flag='train'):
         model.train(setting)
         model.test(setting)
     elif flag == 'test':
-        setting = '2025_05_09'
+        setting = '2025_05_12'
         model.test(setting)
     torch.cuda.empty_cache()
     return True
@@ -22,7 +22,7 @@ if __name__ == '__main__':
     config = {
         'lookback_window' : 120,
         'lookahead_window' : 30,
-        'batch': 4,
+        'batch': 16,
         'data_dict' : {
             "group1" : ['3701', '3703', '3704', '3706', '3707', '3708'],
             "group2" : ['3501', '3502', '3503', '3504', '3505', '3506', '3507', '3508'],
@@ -50,4 +50,4 @@ if __name__ == '__main__':
     print(f"usage feature : {len(config['cols'])}")
     print(f"un-used feature : {len(config['columns_to_exclude'])}")
     print(f"hyper-parameter setting // lookback : {config['lookback_window']} , lookahead : {config['lookahead_window']}, batch : {config['batch']}")
-    performances = run_model(config, flag='test')
+    performances = run_model(config, flag='train')
